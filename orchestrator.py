@@ -231,7 +231,8 @@ async def create_agent(request: CreateAgentRequest):
                 mem_volume.name: {"bind": "/memory", "mode": "rw"},
             },
             mem_limit="2g",
-            cpus=1.0,
+            cpu_quota=100000,
+            cpu_period=100000,
             healthcheck={
                 "test": ["CMD", "python", "-c", "import sys; sys.exit(0)"],
                 "interval": 30,
