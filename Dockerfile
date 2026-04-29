@@ -11,12 +11,10 @@ RUN apt-get update && apt-get install -y \
     curl \
     ca-certificates \
     # Browser automation dependencies (Playwright/Chromium)
-    chromium-browser \
-    chromium-codecs-ffmpeg \
+    chromium \
     libnss3 \
     libxss1 \
     libappindicator3-1 \
-    libindicator7 \
     libnspr4 \
     libxslt1.1 \
     fonts-liberation \
@@ -43,7 +41,7 @@ RUN mkdir -p /workspace /memory /data
 
 # Configure headless browser environment
 ENV BROWSERLESS_HEADLESS=true
-ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
