@@ -541,6 +541,120 @@ docker exec $(docker ps -q -f "name=agent-550e8400") \
 - `status`: "completed" or "failed"
 - `error`: Error message if task failed
 
+### Via API (Recommended for AI Agents)
+
+**Stream live execution logs** while task is running:
+```bash
+curl -N http://localhost:8000/agents/{agent_id}/logs
+```
+
+**Get task status and metadata** (check if done):
+```bash
+curl http://localhost:8000/agents/{agent_id}/status
+```
+
+Returns task status, timestamps, and execution info:
+```json
+{
+  "agent_id": "550e8400-...",
+  "tasks": [
+    {
+      "task_id": "8f3a1f4e-...",
+      "status": "completed",
+      "created_at": "2026-04-28T12:00:05Z",
+      "completed_at": "2026-04-28T12:00:15Z"
+    }
+  ]
+}
+```
+
+## 📋 Complete AI Agent Workflow
+
+For autonomous AI agents to use Agentic without human intervention:
+
+```python
+import requests
+import time
+import json
+
+BASE_URL = "http://localhost:8000"
+
+# 1. Create agent
+agent = requests.post(f"{BASE_URL}/agents/create", json={"name": "auto-agent"}).json()
+agent_id = agent["agent_id"]
+
+# 2. Submit task
+task = requests.post(f"{BASE_URL}/agents/{agent_id}/task", json={
+    "task": "Extract all emails from: john@example.com, jane@test.org",
+    "timeout": 60
+}).json()
+task_id = task["task_id"]
+
+# 3. Poll for completion
+max_wait = 60
+for i in range(max_wait):
+    status = requests.get(f"{BASE_URL}/agents/{agent_id}/status").json()
+    task_status = status["tasks"][0]["status"]
+    
+    if task_status == "completed":
+        print("✅ Task completed!")
+        # Get full output
+        output = requests.get(f"{BASE_URL}/agents/{agent_id}/logs").text
+        print(output)
+        break
+    elif task_status == "failed":
+        print("❌ Task failed")
+        break
+    
+    time.sleep(1)
+
+# 4. Parse results from logs or status
+# Look for "final_output" field in logs for Claude's response
+# Look for "tool_calls" for tools used
+# Look for "error" field if task failed
+
+# 5. Cleanup
+requests.delete(f"{BASE_URL}/agents/{agent_id}")
+```
+
+---
+
+## 🔍 Understanding Agent Execution Logs
+
+When you stream logs via `/agents/{agent_id}/logs`, you'll see JSON events like:
+
+```json
+{"event": "agent_starting", "agent_id": "550e8400-...", "timestamp": "2026-04-28T12:00:05Z"}
+{"event": "task_received", "task": "Extract emails..."}
+{"event": "claude_calling", "model": "claude-sonnet-4-6"}
+{"event": "tool_use", "tool_name": "extract_structured_data", "input": {"text": "..."}}
+{"event": "tool_result", "result": "Found 2 emails"}
+{"event": "agent_completed", "status": "completed", "final_output": "I found..."}
+```
+
+**Key events to look for**:
+- `agent_starting`: Agent initialized
+- `task_received`: Task loaded from workspace
+- `claude_calling`: API call to Claude
+- `tool_use`: Claude requested a tool
+- `tool_result`: Tool execution result
+- `agent_completed` or `agent_failed`: Final status
+- `error`: Any errors during execution
+
+**Parsing logs in code**:
+```python
+import json
+
+# Parse streaming JSON logs
+for line in response.iter_lines():
+    if line.startswith(b"data: "):
+        event = json.loads(line[6:])
+        if event.get("event") == "agent_completed":
+            print(event.get("final_output"))
+        elif event.get("event") == "error":
+            print(f"Error: {event.get('error')}")
+```
+
 ---
 
 ## 🌐 Built-in Tools
