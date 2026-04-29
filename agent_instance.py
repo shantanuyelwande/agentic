@@ -214,7 +214,7 @@ async def run_agent() -> Dict[str, Any]:
 
             # Call Claude
             response = client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model=os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6"),
                 max_tokens=4096,
                 messages=[
                     {
