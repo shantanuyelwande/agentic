@@ -235,8 +235,8 @@ async def create_agent(request: CreateAgentRequest):
             cpu_period=100000,
             healthcheck={
                 "test": ["CMD", "python", "-c", "import sys; sys.exit(0)"],
-                "interval": 30,
-                "timeout": 10,
+                "interval": 30000000000,  # 30 seconds in nanoseconds
+                "timeout": 10000000000,   # 10 seconds in nanoseconds
                 "retries": 3,
             },
         )
