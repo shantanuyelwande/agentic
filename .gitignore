@@ -1,0 +1,86 @@
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.env/
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.hypothesis/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+*.sublime-project
+*.sublime-workspace
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# Browser & Playwright
+.playwright/
+/root/.config/chromium/
+/root/.cache/chromium/
+.webkit/
+
+# Node (if needed)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# OS
+.DS_Store
+.AppleDouble
+.LSOverride
+*.log
+
+# Project-specific
+*.tmp
+.bux/
+
+# Claude-specific (keep skills, ignore memory/cache)
+.claude/memory/
+.claude/cache/
+.claude/rules/
+.claude/temp/
