@@ -50,10 +50,3 @@ jobs:
           # path to a .bandit file that supplies command line arguments
           # ini_path: # optional, default is DEFAULT
 
-      - name: Upload sarif file to repository
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        continue-on-error: true
-        with:
-          sarif_file: results.sarif
-
