@@ -17,6 +17,9 @@ A **high-performance, fault-tolerant agent system** using API + Worker + Redis p
 
 ## 🏗️ System Architecture
 
+> **Visual Diagram**: An interactive Excalidraw architecture diagram is available above showing the complete system layout with all components and data flow.
+
+**ASCII Overview:**
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                 TASK SUBMISSION (API)                       │
