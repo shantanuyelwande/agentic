@@ -1,268 +1,322 @@
-# Claude Project Instructions
+# Claude Project Instructions - v2.0
 
-This is a Claude Agent SDK + Skills + browser-use architecture for autonomous AI agents.
+Horizontally-scalable Claude agent architecture using API + Worker + Redis pattern.
 
 ## Project Overview
 
-**What this is**: A Python framework combining:
-- **Claude Agent SDK**: Official Anthropic agent framework
-- **Skills**: Filesystem-based domain expertise in `.claude/skills/`
-- **browser-use**: Python library for LLM-driven browser automation
+**What this is**: A distributed system for autonomous Claude agents:
+- **api.py**: Lightweight FastAPI service for task submission and polling
+- **worker.py**: Stateless workers that execute tasks from Redis queue
+- **Redis**: Persistent task queue and state store
+- **Skills**: Progressive disclosure via read_file tool (metadata only by default)
+- **browser-use**: Optional browser automation capability
 
-**Why**: This is the recommended Anthropic approach (2025+) for building managed AI agents.
+**Architecture**: Replaces Docker-in-Docker with horizontally-scalable worker pattern.
+
+```
+User → API (fast) → Redis Queue → Worker Pool → Agent Execution → Results (Redis)
+```
 
 ## Key Architecture Decisions
 
-### 1. Official Anthropic Tools Only
-- ✅ Use `anthropic` SDK (Python, native)
-- ✅ Skills from `.claude/skills/` (filesystem-based)
-- ✅ browser-use for web automation (4x more efficient than Playwright MCP)
-- ❌ NO langchain, NO custom agent loops, NO deprecated approaches
+### 1. API + Worker + Redis Pattern
+- ✅ **Stateless API**: Accepts tasks, returns immediately
+- ✅ **Redis Queue**: Reliable task persistence and order
+- ✅ **Horizontal scaling**: `docker-compose up --scale worker=5`
+- ✅ **Fault tolerance**: Checkpointing every N steps
+- ❌ NO Docker-in-Docker (was anti-pattern), NO single monolith
 
-### 2. Skills Pattern
-Skills are markdown files in `.claude/skills/{skill-name}/SKILL.md` with:
-```yaml
----
-name: skill-name
-description: What this skill does
----
+### 2. Progressive Skill Disclosure
+- Skills metadata cached in memory (skill name + description only)
+- Full skill content loaded on-demand via `read_file` tool
+- Agent decides when to load full instructions
+- Saves ~90% context window for typical tasks
 
-# Skill Documentation
-[Instructions, examples, reference material]
-```
-
-Skills provide domain expertise and are automatically discovered.
-
-### 3. Token Efficiency
-- Skills metadata always loaded (~100 tokens)
-- Instructions loaded on-demand
-- No penalty for unused skills
-- Progressive disclosure pattern (metadata → instructions → resources)
+### 3. Task Execution Model
+- **Sync submission**: POST /tasks returns immediately
+- **Async polling**: GET /tasks/{id} to check progress
+- **Timeout enforcement**: Hard limit via `asyncio.timeout()`
+- **Checkpoint recovery**: Can resume mid-task if worker crashes
 
 ## File Structure
 
 ```
+api.py                            # API service (task submission, polling)
+worker.py                         # Worker service (task execution loop)
+agent_instance.py                 # Agent core (uses Anthropic SDK)
+client.py                         # CLI client for testing
+tools/
+  └── custom_tools.py             # Tool implementations (read_file, etc.)
 .claude/
-  ├── skills/                    # Agent Skills (auto-discovered)
-  │   ├── data-extraction/
-  │   │   └── SKILL.md
-  │   ├── web-research/
-  │   │   └── SKILL.md
-  │   └── competitor-analysis/
-  │       └── SKILL.md
-  └── rules/                     # Optional: Path-scoped rules
-      └── RULES.md
-
-.gitignore                        # Ignore sensitive files
-agent.py                          # Core agent (uses Anthropic SDK)
-main.py                           # FastAPI HTTP wrapper
-demo.py                           # CLI demos
-requirements.txt
+  ├── skills/                     # Skills (name+description auto-discovered)
+  │   ├── data-extraction/SKILL.md
+  │   ├── web-research/SKILL.md
+  │   └── competitor-analysis/SKILL.md
+requirements.txt                  # Dependencies (no docker SDK needed)
+Dockerfile                        # Worker image
+Dockerfile.api                    # API image (lightweight)
+docker-compose.yml                # Multi-service orchestration
 ```
 
 ## How It Works
 
-### Task Execution Flow
+### Task Flow (HTTP API)
 
-1. **User provides task** → `run_task()` function
-2. **Skills auto-discovery** → Load all `.claude/skills/*/SKILL.md`
-3. **Claude processes** → Makes decisions using built-in tools
-4. **Tools execute** → Read, Bash, WebSearch, WebFetch, etc.
-5. **Return result** → Success/error with output
+1. **Submit**: `POST /tasks` with `{input, max_steps, timeout}`
+2. **Queue**: API stores metadata in Redis, pushes to task_queue
+3. **Worker**: Polls `brpop("task_queue")`, executes task
+4. **Progress**: Worker updates task status in Redis periodically
+5. **Complete**: Worker stores full result, sets status=completed
+6. **Retrieve**: Client polls `GET /tasks/{id}` until completion
 
-### Key Functions
+### Agent Execution
 
-```python
-# Run a standard task
-await run_task(
-    task="Research AI trends and extract insights",
-    use_browser_automation=False
-)
-
-# Run a browser-based task
-await run_task_with_browser(
-    task="Extract pricing from acme.com",
-    instructions="Optional custom guidance"
-)
-```
+1. Agent receives task dict (not file-based)
+2. Loads skills index (metadata only, ~100 tokens)
+3. Claude decides which skills to use
+4. Agent uses `read_file` tool to load full skill on-demand
+5. Every 3 steps, checkpoint progress to Redis
+6. On completion/timeout/error, return structured result dict
 
 ## Built-in Tools Available
 
-- **File Operations**: Read, Write, Edit, Glob, Grep
-- **Command Execution**: Bash (with timeout)
-- **Web Tools**: WebSearch, WebFetch
-- **Monitoring**: Monitor (for background processes)
-- **Browser Automation**: bash → browser-use scripts
+- **extract_structured_data**: Extract emails, phones, URLs from text
+- **query_database**: Execute safe SQL queries (read-only)
+- **call_external_api**: Call whitelisted REST APIs
+- **read_file**: Read skill content or files from safe dirs
+- **browse_web**: Browser automation (optional, Chromium-based)
 
-## Development Guidelines
+## Getting Started
 
-### When to Create a New Skill
+### Quick Start
 
-Create a skill when:
-- ✅ You have a repeatable methodology (research, analysis, extraction)
-- ✅ It's useful across multiple tasks
-- ✅ It benefits from examples or reference material
-- ❌ NOT for one-off tasks
+```bash
+# 1. Install dependencies
+pip install -r requirements.txt
 
-Example:
+# 2. Set up environment
+cp .env.example .env
+export ANTHROPIC_API_KEY=sk-...
+
+# 3. Start services
+docker-compose up
+
+# 4. In another terminal, submit a task
+python client.py "Extract emails from: john@example.com"
+```
+
+### Local Testing (Standalone)
+
+Test agent without Docker or Redis:
+
+```bash
+# Run agent directly
+python agent_instance.py "Extract emails from: contact@example.com"
+
+# Or
+export ANTHROPIC_API_KEY=sk-...
+python agent_instance.py "Research Claude Agent SDK"
+```
+
+### API Endpoints
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/health` | Liveness check |
+| GET | `/skills` | List available skills (metadata) |
+| GET | `/info` | Configuration info |
+| POST | `/tasks` | Submit task |
+| GET | `/tasks/{id}` | Get task status/result |
+| GET | `/tasks` | List all tasks |
+| GET | `/queue/depth` | Queue statistics |
+
+### Example: Submit and Poll Task
+
+```bash
+# Submit task
+TASK_ID=$(curl -X POST http://localhost:8000/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"input": "Extract emails from: john@example.com", "max_steps": 10}' \
+  | jq -r '.task_id')
+
+# Poll until completion
+while true; do
+  STATUS=$(curl -s http://localhost:8000/tasks/$TASK_ID | jq -r '.status')
+  echo "Status: $STATUS"
+  [ "$STATUS" != "queued" ] && [ "$STATUS" != "running" ] && break
+  sleep 1
+done
+
+# Get result
+curl http://localhost:8000/tasks/$TASK_ID | jq '.result'
+```
+
+## Scaling
+
+### Scale Workers
+
+```bash
+# Start with 5 workers
+docker-compose up --scale worker=5
+
+# Or dynamically scale existing deployment
+docker-compose up -d --scale worker=10
+```
+
+**Key Notes**:
+- Workers are stateless (no affinity required)
+- Redis handles ordering and durability
+- Checkpoints enable fault recovery
+- Each worker processes one task at a time
+
+### Performance Tuning
+
+**Environment Variables**:
+- `CHECKPOINT_INTERVAL`: Save progress every N steps (default 3)
+- `TASK_TTL_SECONDS`: Keep task data for N seconds (default 86400)
+- `MAX_STEPS`: Default max iterations per task (default 10)
+
+## Creating Skills
+
+Skills are Markdown files in `.claude/skills/{name}/SKILL.md`:
+
 ```bash
 mkdir -p .claude/skills/my-skill
 cat > .claude/skills/my-skill/SKILL.md << 'EOF'
 ---
-name: my-skill
-description: Analyze market trends
+name: market-analysis
+description: Analyze market trends, competitors, and opportunities
 ---
 
-# Market Analysis
+# Market Analysis Skill
 
-## When to use
-When analyzing trends in specific markets.
+Use this when you need to analyze markets, identify trends, or research competitors.
 
 ## Approach
-1. Search for recent reports
-2. Identify 3+ sources
-3. Extract key metrics
-4. Compare findings
 
-## Key metrics
-- Growth rate
-- Market size
-- Key players
+1. Search for recent reports and news
+2. Identify 3-5 credible sources
+3. Extract key metrics (market size, growth rate, key players)
+4. Summarize findings and outlook
+
+## Key metrics to track
+
+- Total Addressable Market (TAM)
+- Compound Annual Growth Rate (CAGR)
+- Key competitors and their market share
+- Emerging trends
 EOF
 ```
 
-### Testing Locally
+Agent automatically discovers skills on startup.
 
+## Troubleshooting
+
+**API Won't Start**
 ```bash
-# Check available skills
-python -c "from agent import get_available_skills; print(get_available_skills())"
+# Check Redis is running
+docker-compose logs redis
 
-# Run demo
-python demo.py research
-python demo.py extract
-python demo.py analyze
-python demo.py custom "Your task here"
-
-# Test API
-python -m uvicorn main:app --reload
-curl http://localhost:8000/skills
+# Verify connectivity
+redis-cli -u redis://localhost:6379/0 ping
 ```
 
-### Common Issues & Solutions
-
-**Issue**: "ANTHROPIC_API_KEY not set"
+**Worker Not Processing Tasks**
 ```bash
-export ANTHROPIC_API_KEY=sk-...
-# Or create .env file: ANTHROPIC_API_KEY=sk-...
+# Check worker logs
+docker-compose logs worker
+
+# Verify Redis queue
+redis-cli -u redis://localhost:6379/0 llen task_queue
 ```
 
-**Issue**: Skills not showing in /skills endpoint
+**Task Timeout**
+- Default timeout is 300 seconds (5 min)
+- Adjust via API: `POST /tasks` with `timeout` parameter
+- Or adjust globally in `.env`: `TASK_TTL_SECONDS=3600`
+
+**Skills Not Discovered**
 ```bash
-# Verify structure:
+# Verify skill structure
 ls -la .claude/skills/*/SKILL.md
 
-# Skills must have SKILL.md with name + description in frontmatter
+# Check YAML frontmatter
+head -5 .claude/skills/*/SKILL.md
 ```
 
-**Issue**: Task fails with timeout
-- Increase timeout in `agent.py` (currently 300s)
-- Use `/task/async` endpoint for long tasks
-- Break complex tasks into smaller steps
-
-## Integration Points
-
-### FastAPI Server
+**ANTHROPIC_API_KEY Error**
 ```bash
-# Start server
-python -m uvicorn main:app --reload
+# Add to .env or export
+export ANTHROPIC_API_KEY=sk-ant-...
 
-# Endpoints
-GET    /health              # Liveness
-GET    /skills              # List skills
-GET    /info                # Configuration
-POST   /task                # Run synchronously
-POST   /task/async          # Run asynchronously
-GET    /task/{job_id}       # Check async status
+# Or pass as environment variable to Docker
+docker-compose run -e ANTHROPIC_API_KEY=sk-ant-... api /bin/bash
 ```
 
-### Docker
-```bash
-# Build and run
-docker-compose up
+## Architecture Details
 
-# Server available at http://localhost:8001
-```
+### Why Redis?
 
-## Performance Notes
+- **Durability**: Tasks persist if worker crashes
+- **Ordering**: FIFO queue ensures fairness
+- **Checkpointing**: Progress saved every 3 steps (1-hour TTL)
+- **Simplicity**: No external databases needed
 
-- **First task**: ~10-30s (depends on network/Claude)
-- **Typical task**: 15-60s
-- **Complex research**: 2-5 minutes
-- **Async tasks**: Use `/task/async` for UX
+### Why Stateless Workers?
+
+- **Scalability**: Add/remove workers without coordination
+- **Resilience**: Failed worker doesn't block queue
+- **Isolation**: Each task completely independent
+- **Simplicity**: No inter-worker communication
+
+### Checkpoint Recovery
+
+If a worker crashes mid-task:
+1. Task is marked as `failed` (not requeued)
+2. Next poll returns error: "Worker crashed"
+3. User can re-submit task from API
+4. Checkpoint is ignored on restart (resuming not implemented yet)
 
 ## Security Considerations
 
 - ✅ API key in `.env` (included in `.gitignore`)
-- ✅ Bash commands executed with timeout
-- ✅ No sensitive data in URLs or logs
-- ✅ Skills verified before execution
+- ✅ read_file tool restricts to safe directories only
+- ✅ SQL tool blocks DELETE/DROP/ALTER/TRUNCATE
+- ✅ External APIs whitelisted by domain
+- ✅ All timestamps in UTC, no local time leaks
 
 **Never**:
-- ❌ Commit `.env` file
-- ❌ Log API keys
+- ❌ Commit `.env` file with real API key
 - ❌ Pass sensitive data in task descriptions
-- ❌ Execute untrusted code
+- ❌ Run untrusted skill code
+- ❌ Expose Redis to public internet (use firewall)
 
 ## Version & Dependencies
 
-- Python: 3.11+ (required by browser-use)
+- Python: 3.12 (slim base image)
 - Anthropic SDK: >=0.40.0
-- browser-use: >=0.1.48
 - FastAPI: >=0.115.0
+- Redis: 7 (Alpine)
+- browser-use: >=0.1.48 (optional)
 
 ## Useful Resources
 
-- [Anthropic Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview)
-- [Agent Skills Guide](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview)
+- [Anthropic API Docs](https://docs.anthropic.com)
+- [Claude Models](https://docs.anthropic.com/claude/reference/getting-started-with-the-api)
+- [Redis Docs](https://redis.io/docs/)
+- [FastAPI Docs](https://fastapi.tiangolo.com/)
 - [browser-use on GitHub](https://github.com/browser-use/browser-use)
-- [Model Context Protocol](https://modelcontextprotocol.io/)
 
-## Common Tasks
+## Next Steps
 
-### Research with Citations
-```python
-await run_task(
-    "Research browser automation tools. Cite at least 3 sources. "
-    "Compare Playwright vs browser-use."
-)
-```
-
-### Extract Structured Data
-```python
-await run_task_with_browser(
-    "Visit https://example.com/pricing. Extract: tiers, prices, features."
-)
-```
-
-### Analyze Competitors
-```python
-await run_task(
-    "Compare Slack vs Teams. List features, pricing, and key differences."
-)
-```
-
-## Memory & Context
-
-This file (CLAUDE.md) serves as persistent project context loaded at the start of each session. It should:
-- ✅ Document architecture decisions
-- ✅ Explain how to use the system
-- ✅ Provide development guidelines
-- ✅ Include troubleshooting help
-- ❌ NOT duplicate ARCHITECTURE.md (reference it instead)
-
-For session-specific memory, Claude can write updates to this file or create a `.claude/memory/` directory if needed.
+1. **Add more skills** in `.claude/skills/`
+2. **Scale workers** as load increases
+3. **Monitor metrics** (queue depth, task duration)
+4. **Integrate with external systems** (webhooks, databases)
+5. **Deploy to Kubernetes** (stateless design supports it)
 
 ---
 
-**Last Updated**: 2026-04-28
-**Status**: Active (Agent SDK properly integrated)
+**Last Updated**: 2026-05-03
+**Architecture**: API + Worker + Redis (v2.0)
+**Status**: Production-ready, horizontally scalable

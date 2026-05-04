@@ -1,131 +1,268 @@
-# Getting Started with Claude Managed Agents
+# Getting Started with Agentic
 
-## 📦 What You Have
+A fast, production-ready agent system using Claude API + Redis + Docker Compose.
 
-A complete, production-ready implementation of Claude-powered agents running in isolated Docker containers with:
+## ⚡ 5-Minute Setup
 
-- **agent_instance.py** - Agent brain using Claude API
-- **orchestrator.py** - HTTP API server managing agents
-- **tools/** - Custom tool definitions
-- **Dockerfiles** - Container images
-- **docker-compose.yml** - Multi-container setup
-- **client.py** - Test client demonstrating usage
-
-## 🚀 5-Minute Setup
-
-### 1. Create .env File
+### Step 1: Create .env
 
 ```bash
 cp .env.example .env
-# Edit .env and add your Anthropic API key:
-# ANTHROPIC_API_KEY=sk-...
+
+# Edit .env and add your API key:
+# ANTHROPIC_API_KEY=sk-ant-YOUR_KEY_HERE
 ```
 
-### 2. Install Dependencies
+### Step 2: Build & Start
 
 ```bash
-pip install -r requirements.txt
-```
+# Build Docker images
+docker-compose build
 
-### 3. Build Docker Images
-
-```bash
-# Agent container
-docker build -t claude-agent:latest .
-
-# Orchestrator container  
-docker build -f Dockerfile.orchestrator -t claude-agent-orchestrator:latest .
-```
-
-### 4. Start Services
-
-```bash
+# Start all services (API + 2 workers + Redis)
 docker-compose up -d
 
-# Wait a few seconds for startup
+# Wait for startup
 sleep 5
 
-# Verify
+# Verify health
 curl http://localhost:8000/health
 # Should return: {"status": "healthy", ...}
 ```
 
-### 5. Test It
+### Step 3: Submit Your First Task
 
 ```bash
-python client.py
-
-# Should show:
-# ✅ Orchestrator is healthy
-# ✅ Created agent
-# ✅ Submitted task
-# ✅ Task completed
-```
-
-## 📖 Next Steps
-
-1. **Read README.md** - Full documentation and API reference
-2. **Check CONTRIBUTING.md** - How to add custom tools
-3. **Explore client.py** - See usage patterns
-4. **Add Tools** - Edit `tools/custom_tools.py` with your logic
-
-## 🌐 Browser Automation Setup
-
-Browser automation is **already included**! Each agent container has:
-- ✅ Playwright (browser automation library)
-- ✅ Chromium (headless browser)
-- ✅ browser-use library (high-level browser agent)
-
-### Browser Runs Headless (No GUI)
-
-```dockerfile
-# Already configured in Dockerfile:
-ENV BROWSERLESS_HEADLESS=true
-RUN playwright install chromium
-```
-
-Headless means:
-- ✅ Runs in Docker without display server
-- ✅ Lower memory usage
-- ✅ Faster execution
-- ✅ Perfect for automation
-- ✅ Can take screenshots and extract text
-
-### Test Browser Capability
-
-```bash
-# Create agent
-AGENT=$(curl -s -X POST http://localhost:8000/agents/create \
-  -d '{"name":"browser-test"}' | jq -r '.agent_id')
-
-# Submit browser task
-curl -X POST http://localhost:8000/agents/$AGENT/task \
+# Submit a task
+curl -X POST http://localhost:8000/tasks \
+  -H "Content-Type: application/json" \
   -d '{
-    "task": "Visit https://example.com and tell me the page title",
-    "timeout": 30
+    "input": "Extract emails from: john@example.com and jane@acme.io",
+    "max_steps": 5
   }' | jq .
 
-# Check status
-curl http://localhost:8000/agents/$AGENT/status | jq '.tasks[0].status'
+# Save the task_id from response
+# Example: "task_id": "550e8400-e29b-41d4-a716-446655440000"
+```
 
-# View logs
-curl -N http://localhost:8000/agents/$AGENT/logs | head -20
+### Step 4: Check Results
 
-# Cleanup
-curl -X DELETE http://localhost:8000/agents/$AGENT
+```bash
+# Poll for status (replace {task_id} with actual ID)
+curl http://localhost:8000/tasks/{task_id} | jq .
+
+# Response includes:
+# - status: "queued" | "running" | "completed" | "failed"
+# - result: The agent's output
+# - steps_taken: Number of iterations
+# - duration_seconds: Execution time
 ```
 
 ---
 
-## 🛠️ Customization
+## 📚 Common Tasks
 
-### Add a Custom Tool
+### Extract Data from Text
+
+```bash
+curl -X POST http://localhost:8000/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input": "Extract all phone numbers from: Call us at 555-123-4567 or 555-987-6543",
+    "max_steps": 5
+  }' | jq -r '.task_id'
+
+# Then poll the task_id
+```
+
+### Visit a Website
+
+```bash
+curl -X POST http://localhost:8000/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input": "Visit https://example.com and extract the main heading",
+    "max_steps": 5,
+    "timeout": 60
+  }' | jq -r '.task_id'
+```
+
+### Query Sample Database
+
+```bash
+curl -X POST http://localhost:8000/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input": "Query the database: SELECT * FROM sample LIMIT 5",
+    "max_steps": 5
+  }' | jq -r '.task_id'
+```
+
+### Call External API
+
+```bash
+curl -X POST http://localhost:8000/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input": "Call https://jsonplaceholder.typicode.com/users and get the first user",
+    "max_steps": 5
+  }' | jq -r '.task_id'
+```
+
+---
+
+## 🔧 Scale Workers
+
+The system starts with **2 workers**. Scale up for more throughput:
+
+```bash
+# Scale to 5 workers
+docker-compose up -d --scale worker=5
+
+# Verify
+docker-compose ps | grep worker
+
+# Scale back down
+docker-compose up -d --scale worker=2
+```
+
+---
+
+## 📊 Monitor System
+
+### Check Queue Depth
+
+```bash
+curl http://localhost:8000/queue/depth | jq .
+
+# Response: {"queued": 2, "running": 1}
+```
+
+### View Worker Logs
+
+```bash
+# All workers
+docker-compose logs worker
+
+# Specific worker
+docker logs agentic-worker-1
+
+# Follow in real-time
+docker-compose logs -f worker
+```
+
+### Check Configuration
+
+```bash
+curl http://localhost:8000/info | jq .
+```
+
+### List All Tasks
+
+```bash
+curl http://localhost:8000/tasks | jq .
+```
+
+---
+
+## 🔐 Tool Access
+
+Workers have access to 5 built-in tools:
+
+| Tool | Purpose | Example |
+|------|---------|---------|
+| `extract_structured_data` | Extract emails, phones, URLs | `"Extract emails from: john@example.com"` |
+| `query_database` | SQL SELECT queries | `"SELECT * FROM sample LIMIT 10"` |
+| `call_external_api` | Call REST APIs (whitelisted) | `"Get https://jsonplaceholder.typicode.com/users"` |
+| `read_file` | Read files from safe dirs | Automatically used to load skills |
+| `browse_web` | Web scraping + automation | `"Visit https://example.com and extract..."` |
+
+---
+
+## 🎓 API Reference
+
+### Submit Task
+
+```bash
+POST /tasks
+Content-Type: application/json
+
+{
+  "input": "Your task description here",
+  "max_steps": 10,        # Optional (1-100, default 10)
+  "timeout": 300          # Optional (10-3600s, default 300)
+}
+
+Response:
+{
+  "task_id": "550e8400-...",
+  "status": "queued",
+  "created_at": "2026-05-04T..."
+}
+```
+
+### Poll Status
+
+```bash
+GET /tasks/{task_id}
+
+Response:
+{
+  "task_id": "550e8400-...",
+  "status": "queued|running|completed|failed|timeout",
+  "input": "...",
+  "result": "Agent output here",
+  "error": null,
+  "steps_taken": 4,
+  "duration_seconds": 15.2,
+  "created_at": "2026-05-04T...",
+  "started_at": "2026-05-04T...",
+  "completed_at": "2026-05-04T..."
+}
+```
+
+### Health Check
+
+```bash
+GET /health
+
+Response:
+{
+  "status": "healthy",
+  "redis_available": true,
+  "timestamp": "2026-05-04T..."
+}
+```
+
+### List Skills
+
+```bash
+GET /skills
+
+Response:
+{
+  "count": 3,
+  "skills": [
+    {
+      "name": "data-extraction",
+      "description": "Extract structured data..."
+    },
+    ...
+  ]
+}
+```
+
+---
+
+## 🛠️ Add Custom Tools
 
 Edit `tools/custom_tools.py`:
 
 ```python
-def my_tool(args: Dict[str, Any]) -> Dict[str, Any]:
-    """My custom tool."""
+def my_custom_tool(args: Dict[str, Any]) -> Dict[str, Any]:
+    """My custom tool for Claude to use."""
+    
+    # Get input
     my_param = args.get("my_param", "")
     
     # Validate
@@ -144,182 +281,81 @@ def my_tool(args: Dict[str, Any]) -> Dict[str, Any]:
     }
 ```
 
-Then register in `tools/__init__.py`:
-
-```python
-from .custom_tools import my_tool
-
-__all__ = ["my_tool"]
-```
+Then register in `agent_instance.py` in the tools array.
 
 Claude will discover it automatically!
 
-### Adjust Resource Limits
+---
 
-Edit `docker-compose.yml` under orchestrator service:
+## 🚨 Troubleshooting
 
-```yaml
-environment:
-  - DOCKER_IMAGE=claude-agent:latest
-  # Change orchestrator memory
-  mem_limit: 4g
-  cpus: 2
-```
-
-Or in agent container instantiation (orchestrator.py line ~180):
-
-```python
-container = client.containers.run(
-    DOCKER_IMAGE,
-    mem_limit="4g",  # Change this
-    cpus=2.0,        # Or this
-    ...
-)
-```
-
-## 📚 API Quick Reference
-
-```bash
-# Create agent
-curl -X POST http://localhost:8000/agents/create \
-  -d '{"name":"my-agent"}'
-
-# Submit task
-curl -X POST http://localhost:8000/agents/{id}/task \
-  -d '{"task":"Extract emails from..."}'
-
-# Check status
-curl http://localhost:8000/agents/{id}/status
-
-# Stream logs
-curl -N http://localhost:8000/agents/{id}/logs
-
-# List all agents
-curl http://localhost:8000/agents
-
-# Terminate
-curl -X DELETE http://localhost:8000/agents/{id}
-```
-
-## 🐛 Troubleshooting
-
-| Issue | Solution |
-|-------|----------|
-| Docker not found | Make sure Docker daemon is running: `docker ps` |
-| API not responding | Check logs: `docker-compose logs orchestrator` |
-| Task timeout | Increase timeout: `"timeout": 600` in task request |
-| No agent output | Check agent logs: `curl http://localhost:8000/agents/{id}/logs` |
-
-## 📁 Key Files Explained
-
-| File | Purpose |
-|------|---------|
-| `agent_instance.py` | Runs inside container, talks to Claude |
-| `orchestrator.py` | HTTP API, manages containers |
-| `tools/custom_tools.py` | Your domain-specific tools |
-| `Dockerfile` | Agent container image |
-| `Dockerfile.orchestrator` | Orchestrator container image |
-| `docker-compose.yml` | Brings it all together |
-| `client.py` | Example client showing how to use API |
-
-## 🎯 Common Tasks
-
-### Run Multiple Agents
-
-```bash
-for i in {1..3}; do
-  curl -X POST http://localhost:8000/agents/create \
-    -d "{\"name\":\"agent-$i\"}"
-done
-```
-
-### Extract Data from Text
-
-```bash
-curl -X POST http://localhost:8000/agents/{id}/task \
-  -d '{
-    "task": "Extract emails and phone numbers from: john@example.com 555-123-4567",
-    "timeout": 60
-  }'
-```
-
-### Query Database
-
-```bash
-curl -X POST http://localhost:8000/agents/{id}/task \
-  -d '{
-    "task": "Query the database: SELECT * FROM users WHERE active=1 LIMIT 10"
-  }'
-```
-
-### Call External API
-
-```bash
-curl -X POST http://localhost:8000/agents/{id}/task \
-  -d '{
-    "task": "Get data from API: GET https://jsonplaceholder.typicode.com/users"
-  }'
-```
-
-### Browser Automation - Visit Website
-
-```bash
-curl -X POST http://localhost:8000/agents/{id}/task \
-  -d '{
-    "task": "Visit https://example.com and extract all product names and prices"
-  }'
-```
-
-### Browser Automation - Generate Code
-
-```bash
-curl -X POST http://localhost:8000/agents/{id}/task \
-  -d '{
-    "task": "Visit https://example.com and generate Python BeautifulSoup code to scrape product data"
-  }'
-```
-
-### Browser Automation - Form Automation
-
-```bash
-curl -X POST http://localhost:8000/agents/{id}/task \
-  -d '{
-    "task": "Visit https://example.com/search, fill search box with \"python\", and extract top 5 results. Generate Selenium code for automation."
-  }'
-```
-
-## 🔗 Resources
-
-- [README.md](README.md) - Full documentation
-- [CONTRIBUTING.md](CONTRIBUTING.md) - Contributing guidelines
-- [CLAUDE.md](CLAUDE.md) - Project context
-- [LICENSE](LICENSE) - MIT License
-
-## ✅ Checklist for Production
-
-- [ ] Set strong `ANTHROPIC_API_KEY`
-- [ ] Increase agent memory limit if needed
-- [ ] Set resource limits for Docker
-- [ ] Use Redis for persistent job queue
-- [ ] Add monitoring (Prometheus, Grafana)
-- [ ] Add logging aggregation (ELK)
-- [ ] Run behind reverse proxy (nginx)
-- [ ] Enable HTTPS/TLS
-- [ ] Set up automated backups
-- [ ] Add authentication to API
-- [ ] Rate limiting
-
-## 🆘 Get Help
-
-1. Check README.md FAQ section
-2. Review CONTRIBUTING.md
-3. Check agent logs: `docker-compose logs -f`
-4. Run client.py in debug mode
-
-## 🎉 You're Ready!
-
-You now have a fully functional Claude-powered agent system running on your infrastructure. Start building!
+| Problem | Solution |
+|---------|----------|
+| `ANTHROPIC_API_KEY not set` | Add to .env: `ANTHROPIC_API_KEY=sk-...` |
+| `Connection refused on :8000` | Wait for startup: `sleep 10` |
+| `Connection refused on :6379` | Check Redis: `docker-compose logs redis` |
+| Task stuck in `running` | Check worker: `docker logs agentic-worker-1` |
+| Task timeout | Increase: `"timeout": 600` |
+| Worker crashed | Check logs: `docker-compose logs worker` |
+| No results after completion | Verify status: `curl http://localhost:8000/tasks/{id}` |
 
 ---
 
-**Questions?** Check the documentation files or reach out to the community.
+## 📖 Next Steps
+
+1. **Read CLAUDE.md** - Architecture & design decisions
+2. **Read SETUP_AUTONOMOUS.md** - For AI systems setting up autonomously
+3. **Check SKILLS.md** - How to create custom skills
+4. **Read CONTRIBUTING.md** - Contributing guidelines
+
+---
+
+## ✅ What You Have Now
+
+- ✅ Fast REST API on port 8000
+- ✅ Worker pool (default 2, scalable)
+- ✅ Redis queue & state store
+- ✅ 5 built-in tools
+- ✅ Browser automation
+- ✅ Fault tolerance & checkpointing
+- ✅ Task logging & monitoring
+
+**You're ready to process tasks!** 🚀
+
+---
+
+## 🎯 Example Workflow
+
+```bash
+#!/bin/bash
+
+# 1. Submit a complex task
+TASK_ID=$(curl -s -X POST http://localhost:8000/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input": "Visit deeplearning.ai and find 3 free short courses",
+    "max_steps": 10,
+    "timeout": 60
+  }' | jq -r '.task_id')
+
+echo "Submitted task: $TASK_ID"
+
+# 2. Poll until done
+while true; do
+  STATUS=$(curl -s http://localhost:8000/tasks/$TASK_ID | jq -r '.status')
+  echo "Status: $STATUS"
+  
+  if [ "$STATUS" = "completed" ]; then
+    # 3. Get results
+    curl -s http://localhost:8000/tasks/$TASK_ID | jq '.result'
+    break
+  fi
+  
+  sleep 2
+done
+```
+
+---
+
+**Questions?** Check README.md or SETUP_AUTONOMOUS.md.
+

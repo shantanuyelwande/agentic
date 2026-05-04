@@ -1,29 +1,28 @@
 #!/usr/bin/env python3
 """
-Test Client for Claude Managed Agents
+Client for Claude Managed Agents API v2.0
 
-Demonstrates how to:
-1. Create an agent instance
-2. Submit a task for execution
-3. Monitor execution progress
-4. Retrieve results
-5. Clean up resources
+Submit tasks via HTTP API and poll for results.
 
-Run: python client.py
+Usage:
+    python client.py "your task here"
+    python client.py "Extract emails from: john@example.com"
 """
 
 import asyncio
 import json
+import sys
+import os
 import httpx
 from typing import Optional
+from datetime import datetime
 
-
-BASE_URL = "http://localhost:8000"
+BASE_URL = os.getenv("AGENT_API_URL", "http://localhost:8000")
 HTTP_TIMEOUT = 30.0
 
 
 async def health_check(client: httpx.AsyncClient) -> bool:
-    """Check if orchestrator is healthy."""
+    """Check if API is healthy."""
     try:
         response = await client.get("/health", timeout=HTTP_TIMEOUT)
         return response.status_code == 200
@@ -31,238 +30,218 @@ async def health_check(client: httpx.AsyncClient) -> bool:
         return False
 
 
-async def create_agent(client: httpx.AsyncClient, name: str = "test-agent") -> str:
-    """Create a new agent instance."""
-    print(f"\n1️⃣  Creating agent '{name}'...")
+async def list_skills(client: httpx.AsyncClient) -> None:
+    """List available skills."""
+    print("\n📚 Available Skills:")
+    print("-" * 60)
 
-    response = await client.post(
-        "/agents/create",
-        json={"name": name},
-        timeout=HTTP_TIMEOUT,
-    )
+    try:
+        response = await client.get("/skills", timeout=HTTP_TIMEOUT)
+        if response.status_code != 200:
+            print("   ❌ Error fetching skills")
+            return
 
-    if response.status_code != 200:
-        print(f"   ❌ Error: {response.text}")
-        return None
+        data = response.json()
+        skills = data.get("skills", [])
 
-    data = response.json()
-    agent_id = data["agent_id"]
-    print(f"   ✅ Created: {agent_id[:8]}...")
-    print(f"   Container: {data['container_id']}")
-    print(f"   Created: {data['created_at']}")
+        if not skills:
+            print("   (none)")
+            return
 
-    return agent_id
+        for skill in skills:
+            print(f"   • {skill['name']}")
+            print(f"     {skill['description']}")
+            print()
 
-
-async def submit_task(client: httpx.AsyncClient, agent_id: str, task: str) -> Optional[str]:
-    """Submit a task to an agent."""
-    print(f"\n2️⃣  Submitting task...")
-    print(f"   Task: {task[:60]}...")
-
-    response = await client.post(
-        f"/agents/{agent_id}/task",
-        json={"task": task},
-        timeout=HTTP_TIMEOUT,
-    )
-
-    if response.status_code != 200:
-        print(f"   ❌ Error: {response.text}")
-        return None
-
-    data = response.json()
-    task_id = data["task_id"]
-    print(f"   ✅ Submitted: {task_id[:8]}...")
-    print(f"   Status: {data['status']}")
-
-    return task_id
+    except Exception as e:
+        print(f"   ⚠️  Error: {e}")
 
 
-async def wait_for_completion(
+async def submit_task(
     client: httpx.AsyncClient,
-    agent_id: str,
-    task_id: str,
-    max_wait: int = 60,
-) -> bool:
-    """Wait for task to complete."""
-    print(f"\n3️⃣  Waiting for task completion (max {max_wait}s)...")
+    task: str,
+    max_steps: int = 10,
+    timeout: int = 300,
+) -> Optional[str]:
+    """Submit a task to the API."""
+    print(f"\n📝 Submitting task...")
+    print(f"   Input: {task[:80]}{'...' if len(task) > 80 else ''}")
+    print(f"   Max steps: {max_steps}, Timeout: {timeout}s")
 
-    for i in range(max_wait):
-        response = await client.get(f"/agents/{agent_id}/status", timeout=HTTP_TIMEOUT)
+    try:
+        response = await client.post(
+            "/tasks",
+            json={
+                "input": task,
+                "max_steps": max_steps,
+                "timeout": timeout,
+            },
+            timeout=HTTP_TIMEOUT,
+        )
 
         if response.status_code != 200:
-            print(f"   ❌ Error checking status: {response.text}")
+            print(f"   ❌ Error: {response.text}")
+            return None
+
+        data = response.json()
+        task_id = data.get("task_id")
+        print(f"   ✅ Submitted: {task_id[:12]}...")
+
+        return task_id
+
+    except Exception as e:
+        print(f"   ❌ Error: {e}")
+        return None
+
+
+async def poll_task(
+    client: httpx.AsyncClient,
+    task_id: str,
+    poll_interval: float = 1.0,
+    max_wait: int = 300,
+) -> bool:
+    """Poll task until completion."""
+    print(f"\n⏳ Polling task status (max {max_wait}s)...")
+
+    start_time = datetime.now()
+
+    for i in range(max_wait // int(poll_interval)):
+        try:
+            response = await client.get(f"/tasks/{task_id}", timeout=HTTP_TIMEOUT)
+
+            if response.status_code != 200:
+                print(f"   ❌ Error checking status: {response.text}")
+                return False
+
+            data = response.json()
+            status = data.get("status")
+
+            elapsed = int((datetime.now() - start_time).total_seconds())
+
+            if status == "completed":
+                steps = data.get("steps_taken", 0)
+                duration = data.get("duration_seconds", 0)
+                print(f"   ✅ Completed in {elapsed}s ({steps} steps, {duration:.1f}s execution)")
+                return True
+
+            elif status == "failed":
+                error = data.get("error", "Unknown error")
+                print(f"   ❌ Failed: {error}")
+                return False
+
+            elif status == "timeout":
+                error = data.get("error", "Task timeout")
+                print(f"   ⏱️  {error}")
+                return False
+
+            elif status == "queued":
+                print(f"   ⏳ Queued... ({elapsed}s)")
+            elif status == "running":
+                steps = data.get("steps_taken", 0)
+                print(f"   🔄 Running... ({elapsed}s, {steps} steps)")
+
+            await asyncio.sleep(poll_interval)
+
+        except asyncio.TimeoutError:
+            print(f"   ❌ Request timeout")
+            return False
+        except Exception as e:
+            print(f"   ❌ Error: {e}")
             return False
 
-        status_data = response.json()
-        tasks = status_data.get("tasks", [])
-
-        for task in tasks:
-            if task["task_id"] == task_id:
-                status = task["status"]
-
-                if status == "completed":
-                    print(f"   ✅ Task completed in {i}s")
-                    return True
-
-                elif status == "failed":
-                    print(f"   ❌ Task failed")
-                    return False
-
-        print(f"   ⏳ Still running... ({i}s)")
-        await asyncio.sleep(1)
-
-    print(f"   ❌ Timeout after {max_wait}s")
+    print(f"   ⏱️  Timeout after {max_wait}s")
     return False
 
 
-async def get_task_output(client: httpx.AsyncClient, agent_id: str) -> Optional[dict]:
-    """Get task output from agent."""
-    print(f"\n4️⃣  Retrieving task output...")
+async def get_result(client: httpx.AsyncClient, task_id: str) -> Optional[dict]:
+    """Get full task result."""
+    print(f"\n📊 Task Result:")
+    print("-" * 60)
 
     try:
-        # Try to read output.json from agent's workspace
-        response = await client.get(f"/agents/{agent_id}/status", timeout=HTTP_TIMEOUT)
+        response = await client.get(f"/tasks/{task_id}", timeout=HTTP_TIMEOUT)
 
-        if response.status_code == 200:
-            print(f"   ✅ Retrieved agent status")
-            return response.json()
+        if response.status_code != 200:
+            print(f"❌ Error: {response.text}")
+            return None
+
+        data = response.json()
+
+        # Display summary
+        print(f"Task ID:      {data.get('task_id', 'N/A')[:12]}...")
+        print(f"Status:       {data.get('status', 'unknown').upper()}")
+        print(f"Steps:        {data.get('steps_taken', 0)}")
+        print(f"Duration:     {data.get('duration_seconds', 0):.1f}s")
+
+        if data.get("error"):
+            print(f"Error:        {data.get('error')}")
+
+        # Display result if available
+        if data.get("result"):
+            print(f"\nResult:")
+            print("-" * 60)
+            result_text = data.get("result", "")
+            if len(result_text) > 500:
+                print(result_text[:500])
+                print(f"\n... (truncated, {len(result_text)} total chars)")
+            else:
+                print(result_text)
+
+        return data
 
     except Exception as e:
-        print(f"   ⚠️  Could not retrieve detailed output: {e}")
-
-    return None
-
-
-async def stream_logs(client: httpx.AsyncClient, agent_id: str, max_lines: int = 50) -> None:
-    """Stream agent logs."""
-    print(f"\n5️⃣  Agent logs (first {max_lines} lines):")
-    print("   " + "-" * 60)
-
-    try:
-        line_count = 0
-        async with client.stream("GET", f"/agents/{agent_id}/logs", timeout=HTTP_TIMEOUT) as response:
-            async for line in response.aiter_lines():
-                if line.startswith("data: "):
-                    log_line = line[6:]
-                    if log_line.strip():
-                        print(f"   {log_line[:80]}")
-                        line_count += 1
-
-                        if line_count >= max_lines:
-                            print("   ...")
-                            break
-
-    except asyncio.TimeoutError:
-        print("   ⚠️  Log stream timeout")
-    except Exception as e:
-        print(f"   ⚠️  Could not stream logs: {e}")
-
-    print("   " + "-" * 60)
-
-
-async def terminate_agent(client: httpx.AsyncClient, agent_id: str) -> bool:
-    """Terminate and clean up an agent."""
-    print(f"\n6️⃣  Terminating agent...")
-
-    response = await client.delete(f"/agents/{agent_id}", timeout=HTTP_TIMEOUT)
-
-    if response.status_code != 200:
-        print(f"   ❌ Error: {response.text}")
-        return False
-
-    data = response.json()
-    print(f"   ✅ Terminated: {agent_id[:8]}...")
-    print(f"   Cleanup: {data['status']}")
-
-    return True
-
-
-async def list_agents(client: httpx.AsyncClient) -> None:
-    """List all active agents."""
-    print(f"\n📋 Active Agents:")
-
-    response = await client.get("/agents", timeout=HTTP_TIMEOUT)
-
-    if response.status_code != 200:
-        print(f"   ❌ Error: {response.text}")
-        return
-
-    data = response.json()
-    count = data["count"]
-
-    if count == 0:
-        print("   (none)")
-        return
-
-    print(f"   Total: {count}")
-    for agent in data["agents"]:
-        print(f"   • {agent['name']} (tasks: {agent['task_count']})")
+        print(f"❌ Error: {e}")
+        return None
 
 
 async def main():
-    """Main test workflow."""
+    """Main workflow."""
     print("=" * 70)
-    print("Claude Managed Agents - Test Client")
+    print("Claude Managed Agents - Client v2.0")
     print("=" * 70)
 
+    # Get task from command line
+    if len(sys.argv) < 2:
+        print("\nUsage: python client.py 'your task here'")
+        print("\nExamples:")
+        print("  python client.py 'Extract emails from: john@example.com'")
+        print("  python client.py 'Analyze this data'")
+        return
+
+    task = " ".join(sys.argv[1:])
+
     async with httpx.AsyncClient(base_url=BASE_URL) as client:
-        # Check health
-        print(f"\nChecking orchestrator at {BASE_URL}...")
+        # Check API health
+        print(f"\n🔗 Connecting to {BASE_URL}...")
         healthy = await health_check(client)
 
         if not healthy:
-            print("❌ Orchestrator is not responding. Make sure Docker is running and")
-            print("   the orchestrator container is started:")
-            print("   docker-compose up -d")
+            print("❌ API is not responding. Make sure it's running:")
+            print("   docker-compose up")
             return
 
-        print("✅ Orchestrator is healthy")
+        print("✅ API is healthy")
 
-        # List existing agents
-        await list_agents(client)
-
-        # Create agent
-        agent_id = await create_agent(client, name="demo-agent")
-        if not agent_id:
-            return
+        # List skills
+        await list_skills(client)
 
         # Submit task
-        task = """
-        Extract the following information from this sample text:
-
-        Contact information:
-        - Email: john.doe@example.com
-        - Phone: (555) 123-4567
-        - Website: https://example.com
-
-        Please extract emails, phone numbers, and URLs.
-        """
-
-        task_id = await submit_task(client, agent_id, task)
+        task_id = await submit_task(client, task)
         if not task_id:
-            await terminate_agent(client, agent_id)
             return
 
-        # Wait for completion
-        completed = await wait_for_completion(client, agent_id, task_id, max_wait=30)
+        # Poll until completion
+        completed = await poll_task(client, task_id, poll_interval=1.0, max_wait=300)
 
-        # Get output
-        output = await get_task_output(client, agent_id)
-        if output:
-            print(f"\n📊 Task Status:")
-            for key, value in output.items():
-                if key not in ["agents"]:  # Skip large nested data
-                    print(f"   {key}: {value}")
-
-        # Stream logs
-        await stream_logs(client, agent_id, max_lines=30)
-
-        # Cleanup
-        if not await terminate_agent(client, agent_id):
-            print("⚠️  Could not terminate agent, will expire automatically")
+        # Get result
+        if completed or True:  # Always show result
+            await get_result(client, task_id)
 
         print("\n" + "=" * 70)
-        print("✅ Test completed successfully!")
+        if completed:
+            print("✅ Task completed successfully!")
+        else:
+            print("⚠️  Task did not complete")
         print("=" * 70)
 
 

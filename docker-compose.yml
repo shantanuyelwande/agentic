@@ -1,20 +1,19 @@
 version: '3.8'
 
 services:
-  orchestrator:
+  # API Service - lightweight, stateless
+  api:
     build:
       context: .
-      dockerfile: Dockerfile.orchestrator
-    container_name: claude-agent-orchestrator
+      dockerfile: Dockerfile.api
+    container_name: claude-agent-api
     ports:
       - "8000:8000"
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - DOCKER_IMAGE=claude-agent:latest
+      - REDIS_URL=redis://redis:6379/0
+      - TASK_TTL_SECONDS=86400
       - PORT=8000
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - agents_db:/data/agents
     depends_on:
       - redis
     healthcheck:
@@ -25,7 +24,29 @@ services:
       start_period: 5s
     networks:
       - claude-network
+    restart: unless-stopped
 
+  # Worker Service - executes tasks from queue
+  # Scale with: docker-compose up --scale worker=N
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - REDIS_URL=redis://redis:6379/0
+      - SKILLS_DIR=/app/.claude/skills
+      - CHECKPOINT_INTERVAL=3
+      - CLAUDE_MODEL=claude-sonnet-4-6
+    depends_on:
+      - redis
+    networks:
+      - claude-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+  # Redis - task queue and state storage
   redis:
     image: redis:7-alpine
     container_name: claude-redis
@@ -40,10 +61,12 @@ services:
       retries: 3
     networks:
       - claude-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
 
 volumes:
-  agents_db:
   redis_data:
+    driver: local
 
 networks:
   claude-network:
