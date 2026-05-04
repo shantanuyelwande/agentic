@@ -26,6 +26,7 @@ RUN apt-get update && apt-get install -y \
 
 # Copy application code
 COPY agent_instance.py .
+COPY worker.py .
 COPY tools/ ./tools/
 COPY .claude/ ./.claude/
 COPY requirements.txt .
@@ -47,6 +48,6 @@ ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import sys; sys.exit(0)" || exit 1
 
-# Run agent
+# Run worker
 ENTRYPOINT ["python"]
-CMD ["agent_instance.py"]
+CMD ["worker.py"]

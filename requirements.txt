@@ -3,6 +3,7 @@ anthropic>=0.40.0
 python-dotenv>=1.0.0
 pydantic>=2.0.0
 pydantic-settings>=2.0.0
+pyyaml>=6.0.0
 
 # API & HTTP
 fastapi>=0.115.0
@@ -10,16 +11,12 @@ uvicorn[standard]>=0.32.0
 httpx>=0.25.0
 
 # Infrastructure
-docker>=7.0.0
 redis>=5.0.0
 aiofiles>=23.0.0
 
 # Browser Automation
 browser-use>=0.1.48
 playwright>=1.40.0
-
-# Database (optional, for demo)
-sqlalchemy>=2.0.0
 
 # Logging & Observability
 structlog>=24.0.0

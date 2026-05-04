@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile.orchestrator
+    container_name: langchain-agent-orchestrator
+    ports:
+      - "8001:8000"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-sonnet-4-6}
+      - DOCKER_IMAGE=langchain-agent:latest
+      - PORT=8000
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - agents_db:/data/agents
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    networks:
+      - langchain-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: langchain-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - langchain-network
+
+volumes:
+  agents_db:
+  redis_data:
+
+networks:
+  langchain-network:
+    driver: bridge

@@ -79,8 +79,9 @@ yarn-error.log
 *.tmp
 .bux/
 
-# Claude-specific (keep skills, ignore memory/cache)
+# Claude-specific (keep skills, ignore memory/cache/worktrees)
 .claude/memory/
 .claude/cache/
 .claude/rules/
 .claude/temp/
+.claude/worktrees/

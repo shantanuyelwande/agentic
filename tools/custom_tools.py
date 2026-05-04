@@ -12,6 +12,7 @@ import httpx
 import sqlite3
 import asyncio
 import base64
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
@@ -222,6 +223,7 @@ def call_external_api(args: Dict[str, Any]) -> Dict[str, Any]:
         "data.service.com",
         "httpbin.org",  # For testing
         "jsonplaceholder.typicode.com",  # For testing
+        "example.com",  # For testing
     ]
 
     domain_whitelisted = any(domain in url for domain in allowed_domains)
@@ -298,7 +300,146 @@ def call_external_api(args: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
-# Tool 4: Browser Automation
+# Tool 4: Read File
+def read_file(args: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Read file contents from safe directories.
+
+    Safe directories:
+    - /app/.claude (skills, configuration)
+    - /workspace (task inputs)
+    - /memory (persistent state)
+    - /tmp (temporary files)
+
+    Args:
+        path (str): File path to read (required)
+        limit (int): Max lines to return (default 1000)
+
+    Returns:
+        File contents as text, or error message if unsafe
+    """
+    path = args.get("path", "").strip()
+    limit = args.get("limit", 1000)
+
+    if not path:
+        return {
+            "content": [{
+                "type": "text",
+                "text": "Error: path parameter is required"
+            }],
+            "is_error": True
+        }
+
+    # Resolve path to absolute
+    try:
+        file_path = Path(path).resolve()
+    except Exception as e:
+        return {
+            "content": [{
+                "type": "text",
+                "text": f"Error: Invalid path - {str(e)}"
+            }],
+            "is_error": True
+        }
+
+    # Check if path is in safe directories
+    safe_dirs = [
+        Path("/app/.claude"),
+        Path("/workspace"),
+        Path("/memory"),
+        Path("/tmp"),
+    ]
+
+    is_safe = False
+    for safe_dir in safe_dirs:
+        try:
+            if file_path.is_relative_to(safe_dir):
+                is_safe = True
+                break
+        except (ValueError, AttributeError):
+            # Fallback for Python < 3.12
+            try:
+                file_path.relative_to(safe_dir)
+                is_safe = True
+                break
+            except ValueError:
+                pass
+
+    if not is_safe:
+        return {
+            "content": [{
+                "type": "text",
+                "text": f"Error: Path {path} is not in safe directories (/app/.claude, /workspace, /memory, /tmp)"
+            }],
+            "is_error": True
+        }
+
+    # Check if file exists
+    if not file_path.exists():
+        return {
+            "content": [{
+                "type": "text",
+                "text": f"Error: File not found - {path}"
+            }],
+            "is_error": True
+        }
+
+    # Check if it's a file (not directory)
+    if not file_path.is_file():
+        return {
+            "content": [{
+                "type": "text",
+                "text": f"Error: Path is not a file - {path}"
+            }],
+            "is_error": True
+        }
+
+    # Read file
+    try:
+        with open(file_path, 'r') as f:
+            lines = f.readlines()
+
+        # Limit output
+        if len(lines) > limit:
+            content = "".join(lines[:limit])
+            content += f"\n\n... (truncated after {limit} lines, total {len(lines)} lines)"
+        else:
+            content = "".join(lines)
+
+        return {
+            "content": [{
+                "type": "text",
+                "text": content
+            }]
+        }
+
+    except PermissionError:
+        return {
+            "content": [{
+                "type": "text",
+                "text": f"Error: Permission denied - {path}"
+            }],
+            "is_error": True
+        }
+    except UnicodeDecodeError:
+        return {
+            "content": [{
+                "type": "text",
+                "text": f"Error: File is not text - {path}"
+            }],
+            "is_error": True
+        }
+    except Exception as e:
+        return {
+            "content": [{
+                "type": "text",
+                "text": f"Error: {str(e)}"
+            }],
+            "is_error": True
+        }
+
+
+# Tool 5: Browser Automation
 def browse_web(args: Dict[str, Any]) -> Dict[str, Any]:
     """
     Automate web browser tasks using headless Chromium.
@@ -348,24 +489,74 @@ def browse_web(args: Dict[str, Any]) -> Dict[str, Any]:
         url = "https://" + url
 
     try:
-        # Import browser-use (lazy import to avoid issues if playwright not installed)
+        # Import playwright for local browser automation
         try:
-            from browser_use import Agent
+            from playwright.async_api import async_playwright
         except ImportError:
             return {
                 "content": [{
                     "type": "text",
-                    "text": "Error: browser-use library not available. Install with: pip install browser-use"
+                    "text": "Error: playwright library not available. Install with: pip install playwright"
                 }],
                 "is_error": True
             }
 
         # Run browser automation in async context
         async def run_browser_task():
-            agent = Agent(timeout=timeout)
+            async with async_playwright() as p:
+                # Use chromium browser
+                browser = await p.chromium.launch(headless=True)
+                page = await browser.new_page()
 
-            # Run the task
-            result = await agent.run(task, url=url)
+                try:
+                    # Navigate to URL
+                    await page.goto(url, wait_until="domcontentloaded", timeout=timeout * 1000)
+
+                    # Wait a moment for page to settle
+                    await page.wait_for_timeout(1000)
+
+                    # Collect output
+                    output = {
+                        "url": url,
+                        "task": task,
+                        "status": "completed"
+                    }
+
+                    # Extract page text if requested
+                    if extract_text:
+                        try:
+                            page_text = await page.evaluate('() => document.body.innerText')
+                            output["page_text"] = page_text[:5000]  # First 5000 chars
+                        except Exception as e:
+                            output["text_extraction_error"] = str(e)
+
+                    # Extract links if requested
+                    if extract_links:
+                        try:
+                            links = await page.evaluate('''
+                                () => Array.from(document.querySelectorAll('a[href]'))
+                                    .map(a => ({text: a.textContent.trim(), url: a.href}))
+                                    .filter(l => l.url && l.text)
+                                    .slice(0, 50)
+                            ''')
+                            output["links"] = links
+                        except Exception as e:
+                            output["links_extraction_error"] = str(e)
+
+                    # Take screenshot if requested
+                    if screenshot:
+                        try:
+                            screenshot_bytes = await page.screenshot()
+                            screenshot_b64 = base64.b64encode(screenshot_bytes).decode()
+                            output["screenshot"] = f"data:image/png;base64,{screenshot_b64}"
+                            output["screenshot_size_kb"] = len(screenshot_b64) / 1024
+                        except Exception as e:
+                            output["screenshot_error"] = str(e)
+
+                    return output
+
+                finally:
+                    await browser.close()
 
             # Collect output
             output = {
