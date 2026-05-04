@@ -17,7 +17,56 @@ A **high-performance, fault-tolerant agent system** using API + Worker + Redis p
 
 ## 🏗️ System Architecture
 
-![Architecture Diagram](ARCHITECTURE_DIAGRAM.svg)
+<details>
+<summary><strong>Click to view Architecture Diagram</strong></summary>
+
+```
+                    ┌─────────────────────────────┐
+                    │    User/AI System           │
+                    │   POST /tasks               │
+                    └──────────────┬──────────────┘
+                                   │
+                    ┌──────────────▼──────────────┐
+                    │    API Service (8000)       │
+                    │   Lightweight, Stateless    │
+                    └──────────────┬──────────────┘
+                                   │
+                    ┌──────────────▼──────────────┐
+                    │   REDIS PERSISTENT STORE    │
+                    ├────┬────────────┬───────────┤
+                    │task│ task:{id}  │task_result│
+                    │queue│ Metadata  │  Results  │
+                    └────┴────┬───────┴────┬──────┘
+                             │            │
+                ┌────────────┼─┬──────────┼──────────┐
+                │            │ │          │          │
+                ▼            ▼ ▼          ▼          ▼
+            ┌────────┐  ┌────────┐   ┌────────┐ ┌──────────┐
+            │Worker 1│  │Worker 2│   │Worker N│ │   Built  │
+            │        │  │        │   │        │ │   Tools  │
+            │ Agent  │  │ Agent  │   │   ...  │ ├──────────┤
+            │ Tools  │  │ Tools  │   │        │ │ Extract  │
+            │Storage │  │Storage │   │        │ │ Query DB │
+            └────────┘  └────────┘   └────────┘ │ Call API │
+                │            │          │        │Read File │
+                └────────────┴──────────┴────────┤Browse Web│
+                                                 └──────────┘
+                             ▼
+                    ┌──────────────────────────┐
+                    │  Status Polling (API)    │
+                    │  GET /tasks/{id}         │
+                    └──────────────────────────┘
+```
+
+**Features:**
+- ✓ Progressive skill disclosure
+- ✓ Fault tolerance & checkpointing
+- ✓ Horizontally scalable workers
+- ✓ Browser automation (Chromium)
+- ✓ Redis persistence (24h TTL)
+- ✓ Non-blocking API returns
+
+</details>
 
 **System Components:**
 - `api.py` - Lightweight REST API (port 8000)
