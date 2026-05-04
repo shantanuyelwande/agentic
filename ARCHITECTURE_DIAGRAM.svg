@@ -1,0 +1,133 @@
+<svg viewBox="0 0 900 1000" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="900" height="1000" fill="#f9fafb"/>
+
+  <!-- Title -->
+  <text x="450" y="40" font-size="28" font-weight="bold" text-anchor="middle" fill="#1e1e1e">
+    Agentic: API + Worker + Redis Architecture
+  </text>
+
+  <!-- User/Client -->
+  <rect x="300" y="80" width="300" height="80" rx="8" fill="#a5d8ff" stroke="#4a9eed" stroke-width="2"/>
+  <text x="450" y="125" font-size="18" font-weight="bold" text-anchor="middle" fill="#1e1e1e">User/AI System</text>
+
+  <!-- Arrow down -->
+  <line x1="450" y1="160" x2="450" y2="200" stroke="#4a9eed" stroke-width="2" marker-end="url(#arrowhead)"/>
+  <text x="480" y="180" font-size="12" fill="#4a9eed">POST /tasks</text>
+
+  <!-- API Service -->
+  <rect x="250" y="200" width="400" height="100" rx="8" fill="#d0bfff" stroke="#8b5cf6" stroke-width="2"/>
+  <text x="450" y="245" font-size="18" font-weight="bold" text-anchor="middle" fill="#1e1e1e">API Service (Port 8000)</text>
+  <text x="450" y="270" font-size="12" text-anchor="middle" fill="#6d28d9">Lightweight, Stateless</text>
+  <text x="450" y="285" font-size="12" text-anchor="middle" fill="#6d28d9">Returns immediately</text>
+
+  <!-- Arrow down -->
+  <line x1="450" y1="300" x2="450" y2="340" stroke="#8b5cf6" stroke-width="2" marker-end="url(#arrowhead)"/>
+  <text x="480" y="320" font-size="12" fill="#8b5cf6">Stores in Redis</text>
+
+  <!-- Redis -->
+  <rect x="200" y="340" width="500" height="140" rx="8" fill="#c3fae8" stroke="#06b6d4" stroke-width="2"/>
+  <text x="450" y="360" font-size="16" font-weight="bold" text-anchor="middle" fill="#1e4d4d">Redis (Persistent Store)</text>
+
+  <!-- Redis sub-boxes -->
+  <rect x="220" y="375" width="140" height="50" rx="4" fill="#fff3bf" stroke="#f59e0b" stroke-width="1"/>
+  <text x="290" y="405" font-size="12" text-anchor="middle" fill="#1e1e1e">task_queue</text>
+  <text x="290" y="418" font-size="10" text-anchor="middle" fill="#6b5200">FIFO</text>
+
+  <rect x="380" y="375" width="140" height="50" rx="4" fill="#fff3bf" stroke="#f59e0b" stroke-width="1"/>
+  <text x="450" y="405" font-size="12" text-anchor="middle" fill="#1e1e1e">task:{id}</text>
+  <text x="450" y="418" font-size="10" text-anchor="middle" fill="#6b5200">Metadata</text>
+
+  <rect x="540" y="375" width="140" height="50" rx="4" fill="#fff3bf" stroke="#f59e0b" stroke-width="1"/>
+  <text x="610" y="405" font-size="12" text-anchor="middle" fill="#1e1e1e">task_result</text>
+  <text x="610" y="418" font-size="10" text-anchor="middle" fill="#6b5200">Results</text>
+
+  <!-- Arrow down -->
+  <line x1="450" y1="480" x2="450" y2="520" stroke="#06b6d4" stroke-width="2" marker-end="url(#arrowhead)"/>
+  <text x="480" y="505" font-size="12" fill="#06b6d4">blpop (blocking)</text>
+
+  <!-- Worker Pool Container -->
+  <rect x="150" y="520" width="600" height="350" rx="8" fill="#e5dbff" stroke="#8b5cf6" stroke-width="2" opacity="0.3"/>
+  <text x="165" y="545" font-size="14" font-weight="bold" fill="#6d28d9">Worker Pool (Stateless, Scalable)</text>
+
+  <!-- Worker 1 -->
+  <rect x="170" y="560" width="160" height="280" rx="8" fill="#d0bfff" stroke="#8b5cf6" stroke-width="2"/>
+  <text x="250" y="585" font-size="16" font-weight="bold" text-anchor="middle" fill="#1e1e1e">Worker 1</text>
+
+  <rect x="185" y="605" width="130" height="45" rx="4" fill="#a5d8ff" stroke="#4a9eed" stroke-width="1"/>
+  <text x="250" y="635" font-size="12" text-anchor="middle" fill="#1e1e1e">Claude Agent</text>
+
+  <rect x="185" y="660" width="130" height="45" rx="4" fill="#b2f2bb" stroke="#22c55e" stroke-width="1"/>
+  <text x="250" y="690" font-size="12" text-anchor="middle" fill="#1e1e1e">Tool Execution</text>
+
+  <rect x="185" y="715" width="130" height="45" rx="4" fill="#ffc9c9" stroke="#ef4444" stroke-width="1"/>
+  <text x="250" y="745" font-size="12" text-anchor="middle" fill="#1e1e1e">Result Storage</text>
+
+  <!-- Worker 2 -->
+  <rect x="370" y="560" width="160" height="280" rx="8" fill="#d0bfff" stroke="#8b5cf6" stroke-width="2"/>
+  <text x="450" y="585" font-size="16" font-weight="bold" text-anchor="middle" fill="#1e1e1e">Worker 2</text>
+
+  <rect x="385" y="605" width="130" height="45" rx="4" fill="#a5d8ff" stroke="#4a9eed" stroke-width="1"/>
+  <text x="450" y="635" font-size="12" text-anchor="middle" fill="#1e1e1e">Claude Agent</text>
+
+  <rect x="385" y="660" width="130" height="45" rx="4" fill="#b2f2bb" stroke="#22c55e" stroke-width="1"/>
+  <text x="450" y="690" font-size="12" text-anchor="middle" fill="#1e1e1e">Tool Execution</text>
+
+  <rect x="385" y="715" width="130" height="45" rx="4" fill="#ffc9c9" stroke="#ef4444" stroke-width="1"/>
+  <text x="450" y="745" font-size="12" text-anchor="middle" fill="#1e1e1e">Result Storage</text>
+
+  <!-- Worker N -->
+  <rect x="570" y="560" width="160" height="280" rx="8" fill="#d0bfff" stroke="#8b5cf6" stroke-width="2"/>
+  <text x="650" y="585" font-size="16" font-weight="bold" text-anchor="middle" fill="#1e1e1e">Worker N</text>
+  <text x="650" y="700" font-size="32" text-anchor="middle" fill="#8b5cf6">...</text>
+
+  <!-- Arrows to workers -->
+  <line x1="350" y1="520" x2="250" y2="560" stroke="#8b5cf6" stroke-width="2" marker-end="url(#arrowhead)"/>
+  <line x1="450" y1="520" x2="450" y2="560" stroke="#8b5cf6" stroke-width="2" marker-end="url(#arrowhead)"/>
+  <line x1="550" y1="520" x2="650" y2="560" stroke="#8b5cf6" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- Built-in Tools -->
+  <g>
+    <text x="730" y="555" font-size="14" font-weight="bold" fill="#15803d">Built-in Tools</text>
+
+    <ellipse cx="800" cy="600" rx="70" ry="20" fill="#b2f2bb" stroke="#22c55e" stroke-width="1"/>
+    <text x="800" y="607" font-size="11" text-anchor="middle" fill="#1e1e1e">Extract Data</text>
+
+    <ellipse cx="800" cy="635" rx="70" ry="20" fill="#b2f2bb" stroke="#22c55e" stroke-width="1"/>
+    <text x="800" y="642" font-size="11" text-anchor="middle" fill="#1e1e1e">Query Database</text>
+
+    <ellipse cx="800" cy="670" rx="70" ry="20" fill="#b2f2bb" stroke="#22c55e" stroke-width="1"/>
+    <text x="800" y="677" font-size="11" text-anchor="middle" fill="#1e1e1e">Call API</text>
+
+    <ellipse cx="800" cy="705" rx="70" ry="20" fill="#b2f2bb" stroke="#22c55e" stroke-width="1"/>
+    <text x="800" y="712" font-size="11" text-anchor="middle" fill="#1e1e1e">Read File</text>
+
+    <ellipse cx="800" cy="740" rx="70" ry="20" fill="#b2f2bb" stroke="#22c55e" stroke-width="1"/>
+    <text x="800" y="747" font-size="11" text-anchor="middle" fill="#1e1e1e">Browse Web</text>
+  </g>
+
+  <!-- Arrow back to Redis -->
+  <line x1="450" y1="840" x2="450" y2="880" stroke="#06b6d4" stroke-width="2" marker-end="url(#arrowhead)"/>
+  <text x="480" y="865" font-size="12" fill="#06b6d4">Results → Redis</text>
+
+  <!-- Status Polling -->
+  <rect x="300" y="880" width="300" height="70" rx="8" fill="#c3fae8" stroke="#06b6d4" stroke-width="2"/>
+  <text x="450" y="910" font-size="14" font-weight="bold" text-anchor="middle" fill="#1e4d4d">Status Polling (API)</text>
+  <text x="450" y="930" font-size="12" text-anchor="middle" fill="#1e4d4d">GET /tasks/{id}</text>
+  <text x="450" y="945" font-size="11" text-anchor="middle" fill="#1e4d4d">Returns status, result</text>
+
+  <!-- Features -->
+  <g>
+    <text x="50" y="975" font-size="11" fill="#1e1e1e">✓ Progressive skill disclosure</text>
+    <text x="300" y="975" font-size="11" fill="#1e1e1e">✓ Browser automation (Chromium)</text>
+    <text x="50" y="995" font-size="11" fill="#1e1e1e">✓ Fault tolerance & checkpointing</text>
+    <text x="300" y="995" font-size="11" fill="#1e1e1e">✓ Redis persistence (24h TTL)</text>
+  </g>
+
+  <!-- Arrow marker definition -->
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#1e1e1e"/>
+    </marker>
+  </defs>
+</svg>

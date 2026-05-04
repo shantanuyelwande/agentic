@@ -17,56 +17,9 @@ A **high-performance, fault-tolerant agent system** using API + Worker + Redis p
 
 ## 🏗️ System Architecture
 
-> **Visual Diagram**: An interactive Excalidraw architecture diagram is available above showing the complete system layout with all components and data flow.
+![Architecture Diagram](ARCHITECTURE_DIAGRAM.svg)
 
-**ASCII Overview:**
-```
-┌─────────────────────────────────────────────────────────────┐
-│                 TASK SUBMISSION (API)                       │
-│            HTTP POST /tasks → Returns immediately           │
-└────────────────────┬────────────────────────────────────────┘
-                     │ (stores in Redis)
-                     ▼
-        ┌────────────────────────────┐
-        │    REDIS TASK QUEUE        │   Persistent task queue
-        │                            │   FIFO processing
-        │  task_queue (FIFO)         │   Fault tolerant
-        │  task:{id} (metadata)      │   Checkpointing (TTL: 24h)
-        │  task_result:{id}          │
-        └────────────┬───────────────┘
-                     │ (blpop blocking)
-        ┌────────────▼───────────────┐
-        │   WORKER POOL (N workers)  │
-        │  ┌──────────────────────┐  │   Stateless pool
-        │  │ Worker 1             │  │   ✓ Execute agent
-        │  │ ▼ Claude Agent       │  │   ✓ Call tools
-        │  │ ▼ Tool Execution     │  │   ✓ Store results
-        │  │ ▼ Result Storage     │  │
-        │  └──────────────────────┘  │
-        │  ┌──────────────────────┐  │
-        │  │ Worker 2 (similar)   │  │
-        │  └──────────────────────┘  │
-        │  ┌──────────────────────┐  │
-        │  │ Worker N (similar)   │  │
-        │  └──────────────────────┘  │
-        └────────────┬───────────────┘
-                     │ (stores results)
-                     ▼
-        ┌────────────────────────────┐
-        │   REDIS RESULTS STORE      │
-        │  - Task metadata           │
-        │  - Execution results       │
-        │  - Status/checkpoints      │
-        └────────────────────────────┘
-                     │
-        ┌────────────▼───────────────┐
-        │   STATUS POLLING (API)     │
-        │   HTTP GET /tasks/{id}     │
-        │   Returns: status, result  │
-        └────────────────────────────┘
-```
-
-**Key Components:**
+**System Components:**
 - `api.py` - Lightweight REST API (port 8000)
 - `worker.py` - Task execution agents
 - `agent_instance.py` - Claude agent core
