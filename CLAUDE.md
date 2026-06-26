@@ -17,14 +17,67 @@ Horizontally-scalable Claude agent architecture using API + Worker + Redis patte
 User → API (fast) → Redis Queue → Worker Pool → Agent Execution → Results (Redis)
 ```
 
+---
+
+## Daily Market Advisory Routine
+
+### Log Storage & Continuity
+
+Daily market advisory logs are stored in `market-advisory/logs/` with filenames `YYYY-MM-DD.md`.
+
+**BEFORE generating any new advisory, the routine MUST:**
+
+1. **Read the last 7 calendar days of logs** from `market-advisory/logs/` using the GitHub MCP tool `get_file_contents` on the `shantanuyelwande/agentic` repo (branch: `claude/epic-curie-exldve`). Calculate the date range (today minus 7 days) and attempt to read each file. Missing files (weekends/holidays) are expected — skip them silently.
+
+2. **Open Recommendations Check** — For every BUY NOW / ACCUMULATE call found in the prior logs:
+   - Look up the current price of the stock
+   - Compare to the price at time of recommendation
+   - Determine if the call is still valid or has been invalidated (check the stated invalidation conditions)
+   - Output updated action: hold, add more, cut, or exit
+   - Flag any invalidated recommendations explicitly
+
+3. **Trend Detection** — Compare macro indicators across the last week of logs:
+   - Is the 10-yr yield trending up or down?
+   - Is VIX rising or falling?
+   - Are portfolio stocks continuing to decline or stabilizing?
+   - Has oil direction changed?
+   - Use this to inform whether current recommendations should be more aggressive or more cautious than prior days.
+
+4. **Position Sizing Continuity** — If a prior log recommended "deploy 25% of intended allocation," today's log should NOT re-recommend the full entry. Instead, recommend the NEXT tranche (e.g., "deploy another 25%") or state "hold — waiting for [trigger]."
+
+### Saving the Daily Log
+
+After completing the advisory analysis, the routine MUST:
+
+1. **Generate the log file** in the standard format (see `market-advisory/README.md` for the template sections).
+2. **Save it via GitHub MCP** using `create_or_update_file` to `market-advisory/logs/YYYY-MM-DD.md` on branch `claude/epic-curie-exldve` in the `shantanuyelwande/agentic` repo.
+3. **The log must include ALL sections:** Macro Snapshot, Macro Gate, News Events, Open Recommendations Check (with prior call validation), Portfolio Analysis (each stock with label + dip type + invalidation), Proactive Suggestions, Calendar, Action Summary.
+
+### Email Delivery
+
+After saving the log, send a formatted HTML email to `shantanu.y@gmail.com` via the Gmail MCP `create_draft` tool with the full advisory content.
+
+### Portfolio Tracked
+
+| Ticker | Name |
+|--------|------|
+| META | Meta Platforms |
+| AAPL | Apple |
+| AMZN | Amazon |
+| GOOGL | Alphabet |
+| MSFT | Microsoft |
+| NVDA | Nvidia |
+| VOO | Vanguard S&P 500 ETF |
+
+---
+
 ## Key Architecture Decisions
 
 ### 1. API + Worker + Redis Pattern
-- ✅ **Stateless API**: Accepts tasks, returns immediately
-- ✅ **Redis Queue**: Reliable task persistence and order
-- ✅ **Horizontal scaling**: `docker-compose up --scale worker=5`
-- ✅ **Fault tolerance**: Checkpointing every N steps
-- ❌ NO Docker-in-Docker (was anti-pattern), NO single monolith
+- Stateless API: Accepts tasks, returns immediately
+- Redis Queue: Reliable task persistence and order
+- Horizontal scaling: `docker-compose up --scale worker=5`
+- Fault tolerance: Checkpointing every N steps
 
 ### 2. Progressive Skill Disclosure
 - Skills metadata cached in memory (skill name + description only)
@@ -52,6 +105,9 @@ tools/
   │   ├── data-extraction/SKILL.md
   │   ├── web-research/SKILL.md
   │   └── competitor-analysis/SKILL.md
+market-advisory/
+  ├── README.md                   # Log format docs & template
+  └── logs/                       # Daily advisory logs (YYYY-MM-DD.md)
 requirements.txt                  # Dependencies (no docker SDK needed)
 Dockerfile                        # Worker image
 Dockerfile.api                    # API image (lightweight)
@@ -130,37 +186,12 @@ python agent_instance.py "Research Claude Agent SDK"
 | GET | `/tasks` | List all tasks |
 | GET | `/queue/depth` | Queue statistics |
 
-### Example: Submit and Poll Task
-
-```bash
-# Submit task
-TASK_ID=$(curl -X POST http://localhost:8000/tasks \
-  -H "Content-Type: application/json" \
-  -d '{"input": "Extract emails from: john@example.com", "max_steps": 10}' \
-  | jq -r '.task_id')
-
-# Poll until completion
-while true; do
-  STATUS=$(curl -s http://localhost:8000/tasks/$TASK_ID | jq -r '.status')
-  echo "Status: $STATUS"
-  [ "$STATUS" != "queued" ] && [ "$STATUS" != "running" ] && break
-  sleep 1
-done
-
-# Get result
-curl http://localhost:8000/tasks/$TASK_ID | jq '.result'
-```
-
 ## Scaling
 
 ### Scale Workers
 
 ```bash
-# Start with 5 workers
 docker-compose up --scale worker=5
-
-# Or dynamically scale existing deployment
-docker-compose up -d --scale worker=10
 ```
 
 **Key Notes**:
@@ -178,118 +209,47 @@ docker-compose up -d --scale worker=10
 
 ## Creating Skills
 
-Skills are Markdown files in `.claude/skills/{name}/SKILL.md`:
-
-```bash
-mkdir -p .claude/skills/my-skill
-cat > .claude/skills/my-skill/SKILL.md << 'EOF'
----
-name: market-analysis
-description: Analyze market trends, competitors, and opportunities
----
-
-# Market Analysis Skill
-
-Use this when you need to analyze markets, identify trends, or research competitors.
-
-## Approach
-
-1. Search for recent reports and news
-2. Identify 3-5 credible sources
-3. Extract key metrics (market size, growth rate, key players)
-4. Summarize findings and outlook
-
-## Key metrics to track
-
-- Total Addressable Market (TAM)
-- Compound Annual Growth Rate (CAGR)
-- Key competitors and their market share
-- Emerging trends
-EOF
-```
-
-Agent automatically discovers skills on startup.
+Skills are Markdown files in `.claude/skills/{name}/SKILL.md`. Agent automatically discovers skills on startup.
 
 ## Troubleshooting
 
 **API Won't Start**
 ```bash
-# Check Redis is running
 docker-compose logs redis
-
-# Verify connectivity
 redis-cli -u redis://localhost:6379/0 ping
 ```
 
 **Worker Not Processing Tasks**
 ```bash
-# Check worker logs
 docker-compose logs worker
-
-# Verify Redis queue
 redis-cli -u redis://localhost:6379/0 llen task_queue
 ```
 
 **Task Timeout**
 - Default timeout is 300 seconds (5 min)
 - Adjust via API: `POST /tasks` with `timeout` parameter
-- Or adjust globally in `.env`: `TASK_TTL_SECONDS=3600`
-
-**Skills Not Discovered**
-```bash
-# Verify skill structure
-ls -la .claude/skills/*/SKILL.md
-
-# Check YAML frontmatter
-head -5 .claude/skills/*/SKILL.md
-```
-
-**ANTHROPIC_API_KEY Error**
-```bash
-# Add to .env or export
-export ANTHROPIC_API_KEY=sk-ant-...
-
-# Or pass as environment variable to Docker
-docker-compose run -e ANTHROPIC_API_KEY=sk-ant-... api /bin/bash
-```
 
 ## Architecture Details
 
 ### Why Redis?
-
 - **Durability**: Tasks persist if worker crashes
 - **Ordering**: FIFO queue ensures fairness
 - **Checkpointing**: Progress saved every 3 steps (1-hour TTL)
 - **Simplicity**: No external databases needed
 
 ### Why Stateless Workers?
-
 - **Scalability**: Add/remove workers without coordination
 - **Resilience**: Failed worker doesn't block queue
 - **Isolation**: Each task completely independent
 - **Simplicity**: No inter-worker communication
 
-### Checkpoint Recovery
-
-If a worker crashes mid-task:
-1. Task is marked as `failed` (not requeued)
-2. Next poll returns error: "Worker crashed"
-3. User can re-submit task from API
-4. Checkpoint is ignored on restart (resuming not implemented yet)
-
 ## Security Considerations
 
-- ✅ API key in `.env` (included in `.gitignore`)
-- ✅ read_file tool restricts to safe directories only
-- ✅ SQL tool blocks DELETE/DROP/ALTER/TRUNCATE
-- ✅ External APIs whitelisted by domain
-- ✅ All timestamps in UTC, no local time leaks
-
-**Never**:
-- ❌ Commit `.env` file with real API key
-- ❌ Pass sensitive data in task descriptions
-- ❌ Run untrusted skill code
-- ❌ Expose Redis to public internet (use firewall)
+- API key in `.env` (included in `.gitignore`)
+- read_file tool restricts to safe directories only
+- SQL tool blocks DELETE/DROP/ALTER/TRUNCATE
+- External APIs whitelisted by domain
+- All timestamps in UTC, no local time leaks
 
 ## Version & Dependencies
 
@@ -299,24 +259,8 @@ If a worker crashes mid-task:
 - Redis: 7 (Alpine)
 - browser-use: >=0.1.48 (optional)
 
-## Useful Resources
-
-- [Anthropic API Docs](https://docs.anthropic.com)
-- [Claude Models](https://docs.anthropic.com/claude/reference/getting-started-with-the-api)
-- [Redis Docs](https://redis.io/docs/)
-- [FastAPI Docs](https://fastapi.tiangolo.com/)
-- [browser-use on GitHub](https://github.com/browser-use/browser-use)
-
-## Next Steps
-
-1. **Add more skills** in `.claude/skills/`
-2. **Scale workers** as load increases
-3. **Monitor metrics** (queue depth, task duration)
-4. **Integrate with external systems** (webhooks, databases)
-5. **Deploy to Kubernetes** (stateless design supports it)
-
 ---
 
-**Last Updated**: 2026-05-03
+**Last Updated**: 2026-06-26
 **Architecture**: API + Worker + Redis (v2.0)
 **Status**: Production-ready, horizontally scalable
